@@ -1,0 +1,277 @@
+---
+title: "Figure5_plots"
+author: "Miranda Hunter"
+date: "5/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Libraries:
+``` {r}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+
+Figure 5a: waterfall plot
+``` {r}
+cilia_waterfall_plot <- function(gsea_results, GO_type = "CC") {
+  
+  if (GO_type == "CC") {
+    cilia.terms <- readxl::read_excel("/Users/hunterm/Documents/R/misc/cilia/cilia_go_CC.xlsx") %>% 
+      pull('GO term name') %>% 
+      as.character() %>% 
+      gsub(pattern = " ", replacement = "_", x = .) %>% 
+      gsub(pattern = "\\+", replacement = "PLUS", x = .) %>% 
+      paste0("GO_", .) %>%
+      toupper() 
+    labels_for_plot <- c("GO_CILIUM", "GO_CILIARY_MEMBRANE", "GO_CILIARY_PLASM", "GO_CILIARY_BASAL_BODY")
+  } else if (GO_type == "BP") {
+    cilia.terms <- readxl::read_excel("/Users/hunterm/Documents/R/misc/cilia/cilia_go_BP.xlsx") %>% 
+      pull('GO term name') %>% 
+      as.character() %>% 
+      gsub(pattern = " ", replacement = "_", x = .) %>% 
+      gsub(pattern = "\\+", replacement = "PLUS", x = .) %>% 
+      paste0("GO_", .) %>%
+      toupper() 
+    labels_for_plot <- c("GO_CILIUM_ORGANIZATION", "GO_INTRACILIARY_TRANSPORT", "GO_INTRACILIARY_TRANSPORT_INVOLVED_IN_CILIUM_ASSEMBLY", "GO_MOTILE_CILIUM_ASSEMBLY")
+  } else {
+    stop("GO_type must be BP or CC")
+  }
+  
+  gsea.up <- gsea_results %>% 
+    arrange(desc(NES)) %>% 
+    head(., 250) %>% 
+    dplyr::select(pathway, NES) %>% 
+    rownames_to_column(var = "index")
+  gsea.down <- gsea_results %>% 
+    arrange(desc(NES)) %>% 
+    tail(., 250) %>% 
+    dplyr::select(pathway, NES) %>% 
+    rownames_to_column(var = "index") 
+  
+  gsea.up$index = 1:250
+  gsea.down$index = 250:1
+  gsea.waterfall <- rbind(gsea.up, gsea.down)
+  
+  label_pathways <- intersect(cilia.terms, gsea.waterfall$pathway)
+  
+  cilia_pathways <- data.frame(pathway = label_pathways, cilia_pathway = "yes")
+  noncilia_pathways <- data.frame(pathway = gsea.waterfall$pathway[!gsea.waterfall$pathway %in% label_pathways],
+                                  cilia_pathway = "no")
+  cilia_pathways_all <- rbind(cilia_pathways, noncilia_pathways)
+  
+  gsea.waterfall <- merge(gsea.waterfall,
+                          cilia_pathways_all,
+                          by = "pathway")
+  
+  require(tidyverse)
+  require(ggrepel)
+  plot <- ggplot(gsea.waterfall, aes(x = index, y = NES)) + 
+    geom_point(aes(color = cilia_pathway), size = 4) +
+    scale_color_manual(values = c("#E01111", "#B2B2B220")) +
+    geom_hline(yintercept = 0, size = 1) +
+    theme_minimal() + NoLegend() +
+    scale_y_continuous(limits = c(-3.1, 3.1), breaks = seq(-3,3,1)) +
+    theme(axis.title.x = element_blank(),
+          axis.text.x = element_blank(),
+          axis.title.y = element_text(size = 20, face = "bold"),
+          axis.text.y = element_text(size = 16, color = "black"),
+          panel.grid.major.x = element_blank()) +
+    xlim(0, 251) +
+    ylab("normalized enrichment score") +
+    geom_text_repel(data = subset(gsea.waterfall, pathway %in% labels_for_plot),
+                    aes(label = pathway),
+                    box.padding = unit(1, "lines"),
+                    point.padding = unit(1, "lines"))
+  return(plot)
+}
+
+load('/Users/hunterm/Dropbox/10x/R_objects/EF_DEgenes_gsea_GOCC.R')
+cilia_waterfall_plot(EF_gocc_results$EF.interface)
+```
+
+
+Figure 5b: bar graph looking at cilia GO terms in the two interface subclusters
+``` {r}
+load('/Users/hunterm/Dropbox/10x/R_objects/EF_DEgenes_gsea_GOBP.R')
+
+pathways <- c("GO_CILIUM_ORGANIZATION", "GO_POSITIVE_REGULATION_OF_PROTEIN_LOCALIZATION_TO_CILIUM", "GO_CELL_PROJECTION_ASSEMBLY", "GO_MICROTUBULE_BASED_PROCESS", "GO_MICROTUBULE_CYTOSKELETON_ORGANIZATION", "GO_CILIARY_BASAL_BODY_PLASMA_MEMBRANE_DOCKING")
+
+plot_data_TI <- EF.gsea.gobp$EF.interfacetumor %>% 
+  .[.$pathway %in% pathways,] %>% 
+  dplyr::select(pathway, NES, pval) %>%
+  mutate(type = "interface (tumor-like)") %>% 
+  arrange(-NES)
+
+plot_data_MI <- EF.gsea.gobp$EF.interfacemuscle %>% 
+  .[.$pathway %in% pathways,] %>% 
+  dplyr::select(pathway, NES, pval) %>%
+  mutate(type = "interface (muscle-like)")
+
+pathways2 <- c("GO_CILIARY_BASAL_BODY", "GO_")
+
+
+plot_data_all <- rbind(plot_data_TI, plot_data_MI)
+plot_data_all$pathway <- factor(plot_data_all$pathway, levels = rev(plot_data_TI$pathway))
+plot_data_all$pathway <- gsub("GO_", "", plot_data_all$pathway) %>% gsub("_", " ", .) %>% tolower()
+plot_data_all$pathway <- gsub("of ", "of\n", plot_data_all$pathway) %>% gsub("body ", "body\n", .)
+
+ggplot(plot_data_all, aes(y = pathway, x = NES, fill = type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("#94C851", "#70CAD1")) + 
+  theme_minimal() +
+  theme(axis.title.y = element_blank(),
+        axis.text = element_text(size = 14, colour = "black"),
+        axis.title.x = element_text(size = 14),
+        legend.position = "none") +
+  xlab("normalized enrichment score") 
+```
+
+
+
+Figure 5c: compare enrichment scores for cilia-related GO terms in scRNA-seq and SRT 
+``` {r}
+# load cilia GO terms (from doi:10.1186/s13630-017-0054-8)
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/cilia/cilia_go_BP.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/cilia/cilia_go_CC.R")
+
+# load GSEA results from SRT
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/gsea_results/ABC_gsea_GOBP.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/gsea_results/ABC_gsea_GOCC.R")
+
+# load GSEA results from single cell
+load("/Users/hunterm/Dropbox/10x/R_objects/EF_DEgenes_gsea_GOBP.R")
+load("/Users/hunterm/Dropbox/10x/R_objects/EF_DEgenes_gsea_GOCC.R")
+```
+
+
+Subset lists to only include cilia GO terms:
+``` {r}
+ABC.gobp.cilia <- lapply(ABC.gsea.gobp, function(x) {
+  x %>% .[.$pathway %in% cilia_BP,]
+})
+
+ABC.gocc.cilia <- lapply(ABC.gsea.gocc, function(x) {
+  x %>% .[.$pathway %in% cilia_CC,]
+})
+
+EF_gobp_results <- EF.gsea.gobp
+EF.gobp.cilia <- lapply(EF_gobp_results, function(x) {
+  x %>% .[.$pathway %in% cilia_BP,]
+})
+
+EF.gocc.cilia <- lapply(EF_gocc_results, function(x) {
+  x %>% .[.$pathway %in% cilia_CC,]
+})
+```
+
+Take interface pathways:
+``` {r}
+ABCEF.interface.cilia.gobp <- rbind(ABC.gobp.cilia[["ABC.interface.muscle"]] %>% mutate(type = "ST"),
+                              EF.gobp.cilia[["EF.interface"]] %>% mutate(type = "scRNA-seq"))
+
+ABCEF.interface..cilia.gocc <- rbind(ABC.gocc.cilia[["ABC.interface.muscle"]] %>% mutate(type = "ST"),
+                              EF.gocc.cilia[["EF.interface"]] %>% mutate(type = "scRNA-seq"))
+
+ABCEF.interface.cilia.all <- rbind(ABCEF.interface.cilia.gobp, ABCEF.interface..cilia.gocc)
+
+cilia.terms.plot <- c("GO_CILIUM", "GO_CILIARY_PLASM", "GO_AXONEMAL_DYNEIN_COMPLEX", "GO_INTRACILIARY_TRANSPORT_PARTICLE", "GO_CILIARY_TRANSITION_ZONE", "GO_POSITIVE_REGULATION_OF_CILIUM_ASSEMBLY", "GO_PROTEIN_LOCALIZATION_TO_CILIUM", "GO_DE_NOVO_CENTRIOLE_ASSEMBLY", "GO_CILIUM_ORGANIZATION")
+
+# General Beautification of plot
+cilia.plot.interface <- ABCEF.interface.cilia.all[ABCEF.interface.cilia.all$pathway %in% cilia.terms.plot,] %>% group_by(type) %>% arrange(-NES)
+cilia.plot.interface$pathway <- cilia.plot.interface$pathway %>% 
+  tolower() %>%
+  gsub(pattern = "_", replacement = " ") %>%
+  gsub(pattern = "go ", replacement = "")
+cilia.plot.interface$pathway <- factor(cilia.plot.interface$pathway, levels = (cilia.plot.interface %>% filter(type == "scRNA-seq") %>% arrange(NES) %>% pull(pathway)))
+cilia.plot.interface$type <- factor(cilia.plot.interface$type, levels = c("ST", "scRNA-seq"))
+
+ggplot(cilia.plot.interface, aes(x = NES, y = pathway, fill = type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("#9BCAC2", "#CF144F")) +
+  theme_minimal() +
+  xlab("normalized enrichment score") +
+  theme(axis.title.y = element_blank(),
+        axis.title.x = element_text(size = 14, color = "black"),
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 14, color = "black"))
+
+```
+
+
+Figure 5d: SYSCILIA gene scoring in scRNA-seq dataset
+``` {r}
+# Load SYSCILIA gene list and convert to zebrafish orthologs:
+cilia_fish <- readxl::read_excel('/Users/hunterm/Dropbox/MH_ST/Miranda_R/cilia/cilia_gene_list_full.xlsx') %>% pull(`Gene Name`) %>% convert_to_fish_scoring()
+
+# Add SYSCILIA gene expression score to each cell
+EF.filt <- AddModuleScore(EF.filt,
+                          features = list(intersect(cilia_fish, rownames(EF.filt))),
+                          name = "cilia_all")
+
+nice_violin_plot(EF.filt, group_by = "tissue.subtype.plot", features = "cilia_all1", pt.size = 0)
+```
+
+Run pairwise Wilcoxon test on cilia expression scores: 
+``` {r}
+EF_metadata <- EF.filt[[]]
+pairwise.wilcox.test(EF_metadata$cilia_all1, EF_metadata$tissue.subtype.plot, p.adjust.method = "bonferroni")
+```
+
+
+Figure 5e: quantify expression of upregulated SYSCILIA genes in scRNA-seq data in snRNA-seq dataset
+``` {r}
+# Calculate mean expression of each SYSCILIA gene in the scRNA-seq dataset
+SC_cilia <- GetAssayData(EF.filt, assay = "SCT", slot = "data") %>%
+  .[rownames(.) %in% cilia_fish,] %>%
+  data.frame() %>%
+  rownames_to_column(var = "gene") %>% 
+  mutate(mean = rowMeans(.[,2:ncol(.)])) %>%
+  dplyr::select(gene, mean) %>%
+  arrange(-mean)
+
+# Add expression score for the top 25 genes to the snRNA-seq dataset
+NS_new <- AddModuleScore(NS_new, features = list(SC_cilia$gene[1:25]), name = "SC_cilia_top25_")
+
+Idents(NS_new) <- "cell_subtype_plot"
+levels(NS_new) <- c("interface (muscle_like)", "interface (tumor-like)", "interface (immune-like)", "interface (liver-like)", "interface (intestinal-like)", "tumor", "muscle", "other")
+
+VlnPlot(NS_new, 
+        features = "SC_cilia_top25_1", 
+        sort = F, 
+        pt.size = 0,) + 
+  NoLegend() + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_cartesian(ylim = c(-0.17, 0.31)) + 
+  scale_y_continuous(breaks = c(-0.15,0, 0.15,0.3)) +
+  theme(axis.title.x = element_blank(),
+        axis.text = element_text(size = 16),
+        axis.title = element_text(size = 16),
+        axis.text.x = element_text(angle = -45, hjust = 0),
+        plot.title = element_blank()) +
+  ylab("cilia gene\nexpression score")
+```
+
+Run pairwise Wilcoxon test on cilia expression scores: 
+``` {r}
+NS_metadata <- NS_new[[]] 
+pairwise.wilcox.test(NS_metadata$SC_cilia_top25_1, NS_metadata$cell_subtype_plot, p.adjust.method = "bonferroni")
+```
+
+
+
+
+
+
