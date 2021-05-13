@@ -1,0 +1,73 @@
+---
+title: "Figure1_plots"
+author: "Miranda Hunter"
+date: "5/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plots from Figure 1 of Hunter, Moncada et al.
+
+Libraries:
+``` {r}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+Load integrated object:
+``` {r}
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/ABC_integrated_allgenes_new.R")
+```
+
+Apply metadata from Python clustering:
+``` {r}
+metadata <- read.csv('/Users/hunterm/Dropbox/MH_ST/200115_Visium_library_prep/Reuben analysis/Python_analyses/ABC_metadata_updated.csv')
+ABC <- AddMetaData(ABC, 
+                   metadata = metadata %>% dplyr::select(barcodes, tissue.type) %>% deframe(),
+                   col.name = "tissue.type_new")
+```
+
+Figure 1d plots:
+``` {r}
+nice_spatial_dim_plot(ABC, group.by = "tissue.type_new")
+```
+
+Add UMAP embedding from Python clustering:
+``` {r}
+embeddings_new <- metadata %>% dplyr::select(barcodes, UMAP_1, UMAP_2) %>% column_to_rownames(var = "barcodes") %>% as.matrix()
+rownames(embeddings_new) <- rownames(embeddings_new) %>% gsub(pattern = "\\.", replacement = "-", x = .)
+ABC[["umap_new"]] <- CreateDimReducObject(embeddings = embeddings_new, key = "UMAP_", assay = "integrated")
+```
+
+Figure 1e plot:
+``` {r}
+DimPlot(ABC, reduction = "umap_new", group.by = "tissue.type_new")
+```
+
+Figure 1f plots: tissue type-specific genes.
+``` {r}
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/markdown_manuscript_final/B1_new.R')
+
+plots <- SpatialPlot(B1_new, 
+            features = c("BRAFhuman", "actc1b", "tnnt2a", "mbpa"),
+            alpha = c(0.1,1),
+            image.alpha = 0,
+            pt.size.factor = 1.3,
+            stroke = 0,
+            combine = F) 
+plots <- lapply(plots, function(x) {
+  x + scale_fill_gradientn(colours = rev(brewer.rdbu(n = 100)))
+})
+plot_grid(plotlist = plots, nrow = 1)
+```
+

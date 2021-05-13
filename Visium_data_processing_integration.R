@@ -13,9 +13,9 @@ library(mvhspatialplots)
 
 
 ## Processing of individual samples.
-A1_new <- Load10X_Spatial(data.dir = '/Users/hunterm/Dropbox/MH_ST/visium_data_raw/MVH02_B1_BRAF_EGFP/')
-B1_new <- Load10X_Spatial(data.dir = '/Users/hunterm/Dropbox/MH_ST/visium_data_raw/MVH03_C1_BRAF_EGFP/')
-C1_new <- Load10X_Spatial(data.dir = '/Users/hunterm/Dropbox/MH_ST/visium_data_raw/MVH01_A1_BRAF_EGFP/')
+A1_new <- Load10X_Spatial(data.dir = '/Users/hunterm/Dropbox/MH_ST/visium_data_raw/MVH01_A1_BRAF_EGFP/')
+B1_new <- Load10X_Spatial(data.dir = '/Users/hunterm/Dropbox/MH_ST/visium_data_raw/MVH02_B1_BRAF_EGFP/')
+C1_new <- Load10X_Spatial(data.dir = '/Users/hunterm/Dropbox/MH_ST/visium_data_raw/MVH03_C1_BRAF_EGFP/')
 
 A1_new$orig.ident <- "A1"
 B1_new$orig.ident <- "B1"
