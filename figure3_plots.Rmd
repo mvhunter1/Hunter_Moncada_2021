@@ -1,0 +1,107 @@
+---
+title: "Figure3_plots"
+author: "Miranda Hunter"
+date: "5/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plots from Figure 3 of Hunter, Moncada et al.
+
+Libraries:
+``` {r}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+Load data:
+``` {r}
+load("/Users/hunterm/Dropbox/10x/R_objects/EF_integrated_allgenes_new.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/ABC_integrated_allgenes_new.R")
+```
+
+Figure 3c: violin plot of SRT interface gene expression scores
+``` {r}
+Idents(ABC) <- "tissue.type"
+ABC_interface_genes <- FindMarkers(ABC,
+                                   ident.1 = "interface") %>% 
+  rownames_to_column(var = "Zebrafish_Symbol") %>%
+    filter(p_val_adj <= 0.05) %>% 
+    .[grep(pattern = "^rps|^rpl", x = .$Zebrafish_Symbol, invert = T),] %>% 
+    arrange(-avg_logFC)
+
+EF.filt <- AddModuleScore(EF.filt,
+                          features = list(ABC_interface_genes %>% filter(avg_logFC >= 1.5) %>% pull(Zebrafish_Symbol)),
+                          name = "ABC.interface_foldchange15_")
+
+nice_violin_plot(EF.filt, features = "ABC.interface_foldchange15_1", group_by = "integrated_cell_type", pt.size = 0)
+```
+
+Figure 3e: heatmap
+``` {r}
+Idents(EF.filt) <- "integrated_cell_type"
+tumor.markers.new <- FindMarkers(EF.filt,
+                                 ident.1 = "tumor",
+                                 assay = "SCT") %>%
+  rownames_to_column(var = "gene") %>%
+  filter(p_val_adj <= 0.05) %>%
+  arrange(-avg_logFC)
+
+interface.markers.new <- FindMarkers(EF.filt,
+                                 ident.1 = "interface",
+                                 assay = "SCT") %>%
+  rownames_to_column(var = "gene") %>%
+  filter(p_val_adj <= 0.05) %>%
+  arrange(-avg_logFC)
+
+Idents(EF.filt) <- "integrated_cell_subtype"
+levels(EF.filt) <- c("tumor", "interface (tumor)", "interface (muscle)", "keratinocytes", "erythrocytes", "macrophages", "T cells", "neutrophils", "unknown")
+DoHeatmap(EF.filt,
+          features = c(tumor.markers.new$gene[1:50], interface.markers.new$gene[1:50]),
+          disp.max = 2,
+          disp.min = -2) + scale_fill_gradientn(colors = brewer.rdbu(n = 100) %>% rev()) + NoLegend() + theme(axis.text.y.left = element_text(size = 8, color = "black"))
+```
+
+Figure 3f: PC plots
+``` {r}
+Idents(EF.filt) <- "integrated_cell_type"
+EF.interface <- subset(EF.filt, idents = "interface")
+EF.interface <- RunPCA(EF.interface)
+
+p1 <- FeaturePlot(EF.interface,
+                  features = c("BRAFhuman", "ckba", "stra13"),
+                  reduction = "pca",
+                  pt.size = 1.5,
+                  combine = F,
+                  order = T)
+p2 <- lapply(p1, function(x) x + NoLegend() + scale_colour_gradientn(colours = brewer.rdbu(n = 100) %>% rev()) + theme(axis.ticks = element_blank(), axis.text = element_blank()))
+plot_grid(plotlist = p2, ncol = 3) 
+```
+
+Figure 3g: dot plot
+``` {r}
+Idents(EF.filt) <- "tissue.subtype.plot"
+levels(EF.filt) <- c("other", "tumor", "interface (tumor-like)", "interface (muscle-like)")
+plot <- DotPlot(EF.filt, 
+        features = c("BRAFhuman", "mitfa", "pmela", "ckba", "neb", "ak1", "haus4", "mis18a", "knstrn") %>% rev(),
+        col.max = 1,
+        col.min = -1,
+        dot.scale = 12) + scale_colour_gradientn(colours = rev(brewer.rdbu(n = 100))) +
+  theme(axis.title = element_blank(),
+        axis.text.x = element_text(angle = -40, hjust = 0, face = "italic"),
+        axis.text = element_text(size = 16),
+        plot.margin = margin(r = 10))
+legend <- get_legend(plot)
+plot <- plot + NoLegend()
+plot_grid(plot, legend, nrow = 1, rel_widths = c(4,1))
+```

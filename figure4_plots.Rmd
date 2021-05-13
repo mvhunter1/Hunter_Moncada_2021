@@ -1,0 +1,174 @@
+---
+title: "Figure4_plots"
+author: "Miranda Hunter"
+date: "5/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plots from Figure 4 of Hunter, Moncada et al.
+
+Libraries:
+``` {r}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+
+Figure 4a: UMAP with cluster assignments
+``` {r}
+nice_dim_plot(NS_new, group_by = "cell_type", label = F, pt_size = 1)
+```
+
+Figure 4b: expression of interface marker genes
+``` {r}
+plots <- FeaturePlot(NS_new, 
+            features = c("stmn1a", "plk1", "stra13", "haus4"),
+            order = T,
+            slot = "data",
+            combine = F) 
+plots <- lapply(plots, function(x) {
+  x + scale_colour_gradientn(colours = viridis(n = 100)) + theme(axis.ticks = element_blank(), axis.text = element_blank()) + xlab("UMAP 1") + ylab("UMAP 2")
+})
+plot_grid(plotlist = plots, ncol = 2, align = "hv", axis = "lrbt")
+```
+
+Figure 4c: integration of scRNA-seq and snRNA-seq data
+Integrate scRNA-seq and snRNA-seq data:
+``` {r}
+# Adjust cluster annotations to distinguish scRNA-seq and snRNA-seq cluster types
+EF_metadata <- EF.filt[[]] %>% rownames_to_column(var = "cell") %>% dplyr::select(cell, integrated_cell_type)
+EF_metadata$integrated_cell_type <- paste0("SC_", EF_metadata$integrated_cell_type)
+EF.filt <- AddMetaData(EF.filt, metadata = EF_metadata %>% deframe(), col.name = "int_cell_type")
+
+NS_new$int_cell_type <- paste0("NS_", NS_new$cell_type)
+
+# Run SCTransform integration workflow
+int_list <- list(EF.filt, NS_new)
+int_genes <- intersect(rownames(EF.filt), rownames(NS_new))
+int_features <- SelectIntegrationFeatures(object.list = int_list,
+                                          nfeatures = 3000)
+int_list <- PrepSCTIntegration(object.list = int_list,
+                               anchor.features = int_features,
+                               verbose = F)
+int_anchors <- FindIntegrationAnchors(object.list = int_list,
+                                      normalization.method = "SCT",
+                                      anchor.features = int_features,
+                                      verbose = F)
+EFNS_new_int <- IntegrateData(anchorset = int_anchors,
+                              features.to.integrate = int_genes,
+                              normalization.method = "SCT", 
+                              verbose = FALSE)
+
+# Dimensionality reduction and clustering of new integrated object
+EFNS_new_int <- RunPCA(EFNS_new_int, verbose = F)
+ElbowPlot(EFNS_new_int) 
+EFNS_new_int <- FindNeighbors(EFNS_new_int, dims = 1:15)
+EFNS_new_int <- FindClusters(EFNS_new_int, resolution = 0.8)
+EFNS_new_int <- RunUMAP(EFNS_new_int, dims = 1:15, verbose = F)
+
+# Remove old metadata
+metadata_cols <- EFNS_new_int[[]] %>% colnames()
+cols_keep <- c("orig.ident", "nCount_RNA", "nFeature_RNA", "percent.mt", "percent.ribosomal", "nCount_SCT", "nFeature_SCT", "integrated_snn_res.0.8", "int_cell_type")
+cols_remove <- metadata_cols[!metadata_cols %in% cols_keep]
+
+for (col in cols_remove) {
+  EFNS_new_int[[col]] <- NULL 
+}
+
+# Add another column saying whether it's from nuc-seq or SC.
+EFNS_metadata <- EFNS_new_int[[]] %>% rownames_to_column(var = "cell")
+
+for (ii in 1:nrow(EFNS_metadata)) {
+  if (startsWith(EFNS_metadata$int_cell_type[ii], "SC")) {
+    EFNS_metadata$data_type[ii] <- "scRNA-seq"
+  } else if (startsWith(EFNS_metadata$int_cell_type[ii], "NS")) {
+    EFNS_metadata$data_type[ii] <- "snRNA-seq"
+  }
+}
+
+EFNS_new_int <- AddMetaData(EFNS_new_int, 
+                        metadata = EFNS_metadata %>% dplyr::select(cell, data_type) %>% deframe(),
+                        col.name = "data_type")
+```
+
+Plot integrated UMAP:
+``` {r}
+nice_dim_plot(EFNS_new_int, group_by = "data_type", label = F, pt_size = 0.5)
+nice_dim_plot(EFNS_new_int, group_by = "int_cell_type")
+```
+
+Figure 4d: UMAP of interface subclusters and marker gene expression
+``` {r}
+dimplot <- DimPlot(NS_new_interface, group.by = "cell_subtype", combine = F, pt.size = 0.5, cols = tol(5))
+dimplot <- lapply(dimplot, function(x) {
+  x + theme(axis.ticks = element_blank(), axis.text = element_blank()) + xlab("UMAP 1") + ylab("UMAP 2") 
+})
+
+featureplots <- FeaturePlot(NS_new_interface, 
+            features = c("BRAFhuman", "mylpfa", "ela2", "slc38a4", "ptprc"),
+            order = T,
+            slot = "data",
+            combine = F,
+            pt.size = 0.5) 
+featureplots <- lapply(featureplots, function(x) {
+  x + scale_colour_gradientn(colours = magma(n = 100)) + theme(axis.ticks = element_blank(), axis.text = element_blank()) + xlab("UMAP 1") + ylab("UMAP 2") 
+})
+plots <- c(dimplot, featureplots)
+plot_grid(plotlist = plots, ncol = 3, align = "hv", axis = "lrbt")
+
+```
+
+Figure 4e: dot plot
+``` {r}
+Idents(NS_new) <- "cell_subtype"
+levels(NS_new) <- rev(c("tumor", "interface (tumor-like)", "muscle", "interface (muscle_like)", "liver", "interface (liver-like)",  "macrophages", "NK cells", "interface (immune-like)", "intestinal", "interface (intestinal-like)","keratinocytes", "fibroblasts", "erythrocytes", "endothelial", "nervous system", "unknown"))
+DotPlot(NS_new, 
+        features = rev(c("BRAFhuman", "sox10", "mitfa", "pvalb1", "myhc4", "mylpfa", "fabp10a", "fgb", "apoa1b", "rab44", "ptprc", "parp8", "cgref1", "sec14l8", "serpinb1")), 
+        col.min = -1, 
+        col.max = 1, 
+        dot.scale = 6) + scale_colour_gradientn(colours = brewer.rdbu(n = 100) %>% rev()) + theme(axis.title = element_blank(),
+                                                                                                   axis.text.x = element_text(angle = -45, hjust = 0, vjust = 0.5, face = "italic", size = 14))
+```
+
+
+Figure 4f: heatmap of interface marker genes
+``` {r}
+Idents(NS_new) <- "cell_type"
+interface_markers <- FindMarkers(NS_new, ident.1 = "interface") %>% rownames_to_column(var = "gene") %>% arrange(-avg_logFC)
+
+Idents(NS_new) <- "cell_subtype"
+levels(NS_new) <- c("interface (tumor-like)", "interface (muscle_like)", "interface (immune-like)", "interface (liver-like)", "interface (intestinal-like)", "tumor", "muscle", "liver", "intestinal", "keratinocytes", "macrophages","NK cells", "fibroblasts", "endothelial", "erythrocytes", "nervous system", "unknown")
+
+ DoHeatmap(NS_new, 
+          features = interface_markers$gene[1:100], 
+          disp.max = 1, 
+          disp.min = -1,
+          slot = "scale.data") 
+```
+
+
+``` {r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
