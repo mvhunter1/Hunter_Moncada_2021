@@ -56,9 +56,9 @@ DimPlot(ABC, reduction = "umap_new", group.by = "tissue.type_new")
 
 Figure 1f plots: tissue type-specific genes.
 ``` {r}
-load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/markdown_manuscript_final/B1_new.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/markdown_manuscript_final/C1_new.R')
 
-plots <- SpatialPlot(B1_new, 
+plots <- SpatialPlot(C1_new, 
             features = c("BRAFhuman", "actc1b", "tnnt2a", "mbpa"),
             alpha = c(0.1,1),
             image.alpha = 0,
@@ -69,5 +69,129 @@ plots <- lapply(plots, function(x) {
   x + scale_fill_gradientn(colours = rev(brewer.rdbu(n = 100)))
 })
 plot_grid(plotlist = plots, nrow = 1)
+```
+
+Figure 1g and S3a: spatial GO term pattening of tumor region
+Load results from GO term spatial patterning analysis (see spatial_pattening_of_GO_terms_analysis.R):
+``` {r}
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/A1/GO_expression_A1_tumor.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/A1/GO_pval_A1_tumor.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/B1/GO_expression_B1_tumor.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/B1/GO_pval_B1_tumor.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/C1/GO_expression_C1_tumor.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/C1/GO_pval_C1_tumor.R')
+
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/A1_norm.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/B1_norm.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/C1_norm.R')
+```
+
+Function to add spatial GO term info to metadata:
+``` {r}
+plot_spatial_GO_term <- function(pathway_add, plot_tumor = T, plot_interface = F) {
+  # this assumes that the Seurat objects for ABC are already loaded, and the expression and pval matrices
+  
+  if (length(pathway_add) == 1) {
+    
+    pathway.add <- pathway_add
+    samples <- c("A1", "B1", "C1")
+    plots <- NULL
+    
+    if (plot_tumor) {
+      for (sample in samples) {
+        if (sample == "A1") {
+          metadata.add <- A1.t.expr[rownames(A1.t.expr) %in% pathway.add,] %>% t() %>% rescale(to = c(-1,1)) %>% data.frame() %>% rownames_to_column() %>% deframe()
+          names(metadata.add) <- gsub(pattern = "_1", replacement = "", x = names(metadata.add))
+          A1 <- AddMetaData(A1, metadata = metadata.add, col.name = pathway.add)
+          pval <- A1.t.pval[rownames(A1.t.pval) == pathway.add,] %>% signif(digits = 4)
+          plots[[sample]] <- SpatialPlot(A1, features = pathway.add, image.alpha = 0, stroke = 0, pt.size.factor = 1.3) + 
+            scale_fill_gradientn(colours = brewer.rdbu(n = 100) %>% rev()) +
+            labs(title = pathway.add, subtitle = paste("P =", pval)) +
+            theme(legend.position = "none", plot.title = element_text(size = 14, hjust = 0.5), plot.subtitle = element_text(size = 12, hjust = 0.5))
+        } else if (sample == "B1") {
+          metadata.add <- B1.t.expr[rownames(B1.t.expr) %in% pathway.add,] %>% t() %>% rescale(to = c(-1,1)) %>% data.frame() %>% rownames_to_column() %>% deframe()
+          names(metadata.add) <- gsub(pattern = "_2", replacement = "", x = names(metadata.add))
+          B1 <- AddMetaData(B1, metadata = metadata.add, col.name = pathway.add)
+          pval <- B1.t.pval[rownames(B1.t.pval) == pathway.add,] %>% signif(digits = 4)
+          plots[[sample]] <- SpatialPlot(B1, features = pathway.add, image.alpha = 0, stroke = 0, pt.size.factor = 1.3) + 
+            scale_fill_gradientn(colours = brewer.rdbu(n = 100) %>% rev()) +
+            labs(title = pathway.add, subtitle = paste("P =", pval)) +
+            theme(legend.position = "none", plot.title = element_text(size = 14, hjust = 0.5), plot.subtitle = element_text(size = 12, hjust = 0.5))
+        } else if (sample == "C1") {
+          metadata.add <- C1.t.expr[rownames(C1.t.expr) %in% pathway.add,] %>% t() %>% rescale(to = c(-1,1)) %>% data.frame() %>% rownames_to_column() %>% deframe()
+          names(metadata.add) <- gsub(pattern = "_3", replacement = "", x = names(metadata.add))
+          C1 <- AddMetaData(C1, metadata = metadata.add, col.name = pathway.add)
+          pval <- C1.t.pval[rownames(C1.t.pval) == pathway.add,] %>% signif(digits = 4)
+          plots[[sample]] <- SpatialPlot(C1, features = pathway.add, image.alpha = 0, stroke = 0, pt.size.factor = 1.3) + 
+            scale_fill_gradientn(colours = brewer.rdbu(n = 100) %>% rev()) +
+            labs(title = pathway.add, subtitle = paste("P =", pval)) +
+            theme(legend.position = "none", plot.title = element_text(size = 14, hjust = 0.5), plot.subtitle = element_text(size = 12, hjust = 0.5))
+        }
+      }
+    } else if (plot_interface) {
+      for (sample in samples) {
+        if (sample == "A1") {
+          metadata.add <- A1.i.expr[rownames(A1.i.expr) %in% pathway.add,] %>% t() %>% rescale(to = c(-1,1)) %>% data.frame() %>% rownames_to_column() %>% deframe()
+          names(metadata.add) <- gsub(pattern = "_1", replacement = "", x = names(metadata.add))
+          A1 <- AddMetaData(A1, metadata = metadata.add, col.name = pathway.add)
+          pval <- A1.i.pval[rownames(A1.i.pval) == pathway.add,] %>% signif(digits = 4)
+          plots[[sample]] <- SpatialPlot(A1, features = pathway.add, image.alpha = 0, stroke = 0, pt.size.factor = 1.3) + 
+            scale_fill_gradientn(colours = brewer.rdbu(n = 100) %>% rev()) +
+            labs(title = pathway.add, subtitle = paste("P =", pval)) +
+            theme(legend.position = "none", plot.title = element_text(size = 14, hjust = 0.5), plot.subtitle = element_text(size = 12, hjust = 0.5))
+        } else if (sample == "B1") {
+          metadata.add <- B1.i.expr[rownames(B1.i.expr) %in% pathway.add,] %>% t() %>% rescale(to = c(-1,1)) %>% data.frame() %>% rownames_to_column() %>% deframe()
+          names(metadata.add) <- gsub(pattern = "_2", replacement = "", x = names(metadata.add))
+          B1 <- AddMetaData(B1, metadata = metadata.add, col.name = pathway.add)
+          pval <- B1.i.pval[rownames(B1.i.pval) == pathway.add,] %>% signif(digits = 4)
+          plots[[sample]] <- SpatialPlot(B1, features = pathway.add, image.alpha = 0, stroke = 0, pt.size.factor = 1.3) + 
+            scale_fill_gradientn(colours = brewer.rdbu(n = 100) %>% rev()) +
+            labs(title = pathway.add, subtitle = paste("P =", pval)) +
+            theme(legend.position = "none", plot.title = element_text(size = 14, hjust = 0.5), plot.subtitle = element_text(size = 12, hjust = 0.5))
+        } else if (sample == "C1") {
+          metadata.add <- C1.i.expr[rownames(C1.i.expr) %in% pathway.add,] %>% t() %>% rescale(to = c(-1,1)) %>% data.frame() %>% rownames_to_column() %>% deframe()
+          names(metadata.add) <- gsub(pattern = "_3", replacement = "", x = names(metadata.add))
+          C1 <- AddMetaData(C1, metadata = metadata.add, col.name = pathway.add)
+          pval <- C1.i.pval[rownames(C1.i.pval) == pathway.add,] %>% signif(digits = 4)
+          plots[[sample]] <- SpatialPlot(C1, features = pathway.add, image.alpha = 0, stroke = 0, pt.size.factor = 1.3) + 
+            scale_fill_gradientn(colours = brewer.rdbu(n = 100) %>% rev()) +
+            labs(title = pathway.add, subtitle = paste("P =", pval)) +
+            theme(legend.position = "none", plot.title = element_text(size = 14, hjust = 0.5), plot.subtitle = element_text(size = 12, hjust = 0.5))
+        }
+      }
+    }
+    spatial_plots <- plot_grid(plotlist = plots, nrow = 1)
+    return(spatial_plots)
+  }
+}
+```
+
+``` {r}
+p1 <- plot_spatial_GO_term("GO_MACROPHAGE_MIGRATION", plot_tumor = T, plot_interface = F)
+p2 <- plot_spatial_GO_term("GO_SMALL_MOLECULE_BIOSYNTHETIC_PROCESS", plot_tumor = T, plot_interface = F)
+p3 <- plot_spatial_GO_term("GO_EXTRACELLULAR_STRUCTURE_ORGANIZATION", plot_tumor = T, plot_interface = F)
+plot_grid(p1,p2,p3, nrow = 3)
+```
+
+Figure 1h and S3b: spatial GO term pattening of microenvironment
+``` {r}
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/A1_macroenv/GO_expression_A1_macroenv.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/A1_macroenv/GO_pval_A1_macroenv.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/B1_macroenv/GO_expression_B1_macroenv.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/B1_macroenv/GO_pval_B1_macroenv.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/C1_macroenv/GO_expression_C1_macroenv.R')
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/go_term_spatial/C1_macroenv/GO_pval_C1_macroenv.R')
+
+
+p1 <- plot_spatial_GO_term("GO_MACROPHAGE_APOPTOTIC_PROCESS", plot_tumor = F, plot_interface = T)
+p2 <- plot_spatial_GO_term("GO_SMALL_MOLECULE_BIOSYNTHETIC_PROCESS", plot_tumor = F, plot_interface = T)
+p3 <- plot_spatial_GO_term("GO_EXTRACELLULAR_STRUCTURE_ORGANIZATION", plot_tumor = F, plot_interface = T)
+plot_grid(p1,p2,p3, nrow = 3)
+```
+
+
+
+``` {r}
+sessionInfo()
 ```
 
