@@ -1,0 +1,175 @@
+---
+title: "FigureS1_plots"
+author: "Miranda Hunter"
+date: "5/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Plots from Figure S1 of Hunter, Moncada et al.
+
+Libraries:
+``` {r, message = F, warning = F}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+Load data:
+``` {r}
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/ABC_integrated_allgenes_new.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/A1_norm.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/B1_norm.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/C1_norm.R")
+```
+
+
+Figure S1a and S1b: QC metrics histograms
+``` {r}
+metadata_ABC <- list(A1 = A1[[]] %>% data.frame(),
+                     B1 = B1[[]] %>% data.frame(),
+                     C1 = C1[[]] %>% data.frame())
+
+
+# UMIs
+p1 <- ggplot(A1[[]] %>% data.frame(), aes(x = nCount_Spatial)) +
+  geom_histogram(binwidth = 500, fill = "#A1BF63") +
+  theme_minimal() +
+  coord_cartesian(ylim = c(0,500), xlim = c(0,14500)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("UMIs per array spot") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+
+p2 <- ggplot(B1[[]] %>% data.frame(), aes(x = nCount_Spatial)) +
+  geom_histogram(binwidth = 500, fill = "#357D8A") +
+  theme_minimal() +
+  coord_cartesian(ylim = c(0,200), xlim = c(0,30000)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("UMIs per array spot") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+
+p3 <- ggplot(C1[[]] %>% data.frame(), aes(x = nCount_Spatial)) +
+  geom_histogram(binwidth = 500, fill = "#282E68") +
+  theme_minimal() +
+  coord_cartesian(ylim = c(0,250), xlim = c(0,20000)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("UMIs per array spot") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+
+plot_grid(p2,p3,p1, ncol = 3)
+
+# genes
+p4 <- ggplot(A1[[]] %>% data.frame(), aes(x = nFeature_Spatial)) +
+  geom_histogram(binwidth = 100, fill = "#A1BF63") +
+  theme_minimal() +
+  coord_cartesian(xlim = c(0,3000)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("UMIs per array spot") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+
+p5 <- ggplot(B1[[]] %>% data.frame(), aes(x = nFeature_Spatial)) +
+  geom_histogram(binwidth = 100, fill = "#357D8A") +
+  theme_minimal() +
+  coord_cartesian(xlim = c(0,5000)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("UMIs per array spot") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+
+p6 <- ggplot(C1[[]] %>% data.frame(), aes(x = nFeature_Spatial)) +
+  geom_histogram(binwidth = 100, fill = "#282E68") +
+  theme_minimal() +
+  coord_cartesian(xlim = c(0,4000)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("UMIs per array spot") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) 
+
+plot_grid(p5,p6,p1, ncol = 3)
+```
+
+
+
+Figure S1d,e: Plot UMIs and genes onto ST array
+``` {r}
+p1 <- SpatialPlot(A1, 
+                  features = "nCount_Spatial", 
+                  image.alpha = 0, 
+                  stroke = 0, 
+                  pt.size.factor = 1.4) + scale_fill_gradientn(colours = inferno(n = 100))
+p2 <- SpatialPlot(B1, 
+                  features = "nCount_Spatial", 
+                  image.alpha = 0, 
+                  stroke = 0, 
+                  pt.size.factor = 1.4) + scale_fill_gradientn(colours = inferno(n = 100))
+p3 <- SpatialPlot(C1, 
+                  features = "nCount_Spatial", 
+                  image.alpha = 0, 
+                  stroke = 0, 
+                  pt.size.factor = 1.4) + scale_fill_gradientn(colours = inferno(n = 100))
+plot_grid(p2,p3,p1, ncol = 3)
+
+
+p4 <- SpatialPlot(A1, 
+                  features = "nFeature_Spatial", 
+                  image.alpha = 0, 
+                  stroke = 0, 
+                  pt.size.factor = 1.4) + scale_fill_gradientn(colours = viridis(n = 100))
+p5 <- SpatialPlot(B1, 
+                  features = "nFeature_Spatial", 
+                  image.alpha = 0, 
+                  stroke = 0, 
+                  pt.size.factor = 1.4) + scale_fill_gradientn(colours = viridis(n = 100))
+p6 <- SpatialPlot(C1, 
+                  features = "nFeature_Spatial", 
+                  image.alpha = 0, 
+                  stroke = 0, 
+                  pt.size.factor = 1.4) + scale_fill_gradientn(colours = viridis(n = 100))
+
+plot_grid(p5,p6,p4, ncol = 3)
+
+```
+
+
+Figure S1f: UMIs per spot for tissue types
+``` {r}
+Idents(ABC) <- "orig.ident"
+p3 <- nice_violin_plot(subset(ABC, idents = "A1"), group_by = "tissue.type", features = "nCount_Spatial", sort = F)
+p1 <- nice_violin_plot(subset(ABC, idents = "B1"), group_by = "tissue.type", features = "nCount_Spatial", sort = F)
+p2 <- nice_violin_plot(subset(ABC, idents = "C1"), group_by = "tissue.type", features = "nCount_Spatial", sort = F)
+
+plot_grid(p1,p2,p3, nrow = 1, align = "hv", axis = "lrbt")
+```
+
+
+
+
+``` {r}
+sessionInfo()
+```
