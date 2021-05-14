@@ -1,0 +1,231 @@
+---
+title: "Figure6_plots"
+author: "Miranda Hunter"
+date: "5/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plots from Figure 6 of Hunter, Moncada et al.
+
+Libraries:
+``` {r}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+
+Load data:
+``` {r}
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/ABC_integrated_allgenes_new.R") # SRT
+load("/Users/hunterm/Dropbox/10x/R_objects/EF_integrated_allgenes_new.R") # scRNA-seq
+load('/Users/hunterm/Dropbox/10x/nuc_seq/NS_norm_new_hashing_nodoublets.R') # snRNA-seq
+```
+
+Figure 6c-e: add ETS gene expression score to scRNA-seq, snRNA-seq and SRT datasets.
+Load list of fish ETS genes:
+``` {r}
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/cilia/ets_genelist_fish.R')
+```
+
+scRNA-seq:
+``` {r}
+EF.filt <- AddModuleScore(EF.filt,
+                          features = list(intersect(rownames(EF.filt), ets.genes.fish)),
+                          name = "ets_")
+nice_violin_plot(EF.filt, group_by = "tissue.subtype.plot", features = "ets_1", pt.size = 0)
+```
+
+Stats:
+``` {r}
+pairwise.wilcox.test(EF.filt$ets_1, EF.filt$tissue.subtype.plot, p.adjust.method = "bonferroni")
+```
+
+
+SRT:
+``` {r}
+ABC <- AddModuleScore(ABC,
+                          features = list(intersect(rownames(EF.filt), ets.genes.fish)),
+                          name = "ets_")
+nice_violin_plot(ABC, group_by = "tissue.type", features = "ets_1", pt.size = 0)
+```
+
+Stats:
+``` {r}
+pairwise.wilcox.test(ABC$ets_1, ABC$tissue.type, p.adjust.method = "bonferroni")
+```
+
+
+snRNA-seq:
+``` {r}
+NS_new <- AddModuleScore(NS_new, features = list(intersect(ets.genes.fish, rownames(NS_new))), name = "ets_all")
+
+Idents(NS_new) <- "cell_subtype_plot"
+levels(NS_new) <- c("interface (muscle_like)", "interface (tumor-like)", "interface (immune-like)", "interface (liver-like)", "interface (intestinal-like)", "tumor", "muscle", "other")
+
+VlnPlot(NS_new, features = "ets_all1", pt.size = 0) + 
+  NoLegend() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme(axis.text.x = element_text(size = 16, angle = -45, hjust = 0),
+        axis.title.x = element_blank(),
+        axis.text.y = element_text(size = 16)) +
+  coord_cartesian(ylim = c(-0.17, 0.3)) +
+  scale_y_continuous(breaks = c(-0.15, 0, 0.15, 0.3))
+```
+
+stats:
+``` {r}
+pairwise.wilcox.test(NS_new$ets_all1, NS_new$cell_subtype_plot, p.adjust.method = "bonferroni")
+```
+
+
+Figure 6f: enrichment scores for ETS target genes
+First load ETS motif target genes and run GSEA.
+scRNA-seq:
+``` {r}
+load("/Users/hunterm/Dropbox/10x/R_objects/homer_genelists_EF/EF_marker_list_forhomer_filt.R")
+EF.interface.markers.homer <- marker_list[["EF.interface"]]
+EF.interface.motif2 <- read.table("/Users/hunterm/Documents/bash_scripts/homer/HOMER_singlecell/EF_interface/homer_results_20200721_130317_EFinterface_all_motif2/out_m2all.txt", sep = "\t", header = T, fill = T, skip = 24)
+EF.interface.motif2.genes <- EF.interface.motif2 %>% pull(Name) %>% as.character() %>% unique()
+
+EF.interface.motif2.genes.h <- convert_motif_targets_human(EF.interface.motif2.genes, EF.interface.markers.homer)
+
+# Load pathways for GSEA
+human.genes <- msigdbr(species = "Homo sapiens")
+genesets.GOBP <- filter(human.genes, gs_subcat == "GO:BP") # GO biological pathways
+pathways.GOBP <- genesets.GOBP %>% split(x = .$gene_symbol, f = .$gs_name)
+genesets.GOCC <- filter(human.genes, gs_subcat == "GO:CC") # GO cellular component
+pathways.GOCC <- genesets.GOCC %>% split(x = .$gene_symbol, f = .$gs_name)
+
+# fGSEA: GO biological processes
+EF.interface.motif2.gobp <- fgsea(pathways = pathways.GOBP,
+                                      stats = EF.interface.motif2.genes.h,
+                                      nperm = 10000) %>%
+  arrange(desc(NES)) %>%
+  mutate(log10pval = -log10(pval)) %>%
+  select(pathway, NES, pval, log10pval, everything())
+
+# fGSEA: GO cellular component
+EF.interface.motif2.gocc <- fgsea(pathways = pathways.GOCC,
+                                      stats = EF.interface.motif2.genes.h,
+                                      nperm = 10000) %>%
+  arrange(desc(NES)) %>%
+  mutate(log10pval = -log10(pval)) %>%
+  select(pathway, NES, pval, log10pval, everything())
+```
+
+SRT:
+``` {r}
+# Load motif targets
+setwd('/Users/hunterm/Documents/bash_scripts/homer/HOMER_Visium/ABC/ABC_interface/homer_results_20200409_140518_ABCi_all_motif123/')
+load('/Users/hunterm/Documents/bash_scripts/homer/HOMER_Visium/ABC/ABC_interface/i_markers_all_ABC.R')
+expression.data <- i.markers.all
+rm(i.markers.all)
+ABC.motif1 <- read.table('out_m1all.txt', sep = "\t", header = T, fill = T, skip = 24)
+ABC.motif1.human <- ABC.motif1 %>% convert_motif_targets_human()
+ 
+# fGSEA: GO biological processes
+ABC_interface_motif_gobp <- fgsea(pathways = pathways.GOBP,
+                                      stats = ABC.motif1.human,
+                                      nperm = 10000) %>%
+  arrange(desc(NES)) %>%
+  mutate(log10pval = -log10(pval)) %>%
+  select(pathway, NES, pval, log10pval, everything())
+
+# fGSEA: GO cellular component
+ABC_interface_motif_gocc <- fgsea(pathways = pathways.GOCC,
+                                      stats = ABC.motif1.human,
+                                      nperm = 10000) %>%
+  arrange(desc(NES)) %>%
+  mutate(log10pval = -log10(pval)) %>%
+  select(pathway, NES, pval, log10pval, everything())
+```
+
+Make bar graph:
+``` {r}
+pathways <- c("GO_CILIUM", "GO_CILIARY_BASAL_BODY", "GO_INTRACILIARY_TRANSPORT_PARTICLE", "GO_MICROTUBULE_ASSOCIATED_COMPLEX", "GO_CENTROSOME", "GO_CENTRIOLE")
+
+ABC_plot_data <- ABC_interface_motif_GOCC[ABC_interface_motif_GOCC$pathway %in% pathways,] %>% mutate(type = "ST")
+EF_plot_data <- EF_interface_motif_GOCC[EF_interface_motif_GOCC$pathway %in% pathways,] %>% mutate(type = "scRNA-seq")
+plot_data <- rbind(EF_plot_data, ABC_plot_data)
+
+plot_data$pathway <- gsub("GO_", replacement = "", plot_data$pathway) %>% gsub("_", " ", .) %>% tolower()
+
+plot_data$pathway <- factor(plot_data$pathway, levels = rev(c("cilium", "ciliary basal body", "intraciliary transport particle", "centrosome", "centriole", "microtubule associated complex")))
+
+ggplot(plot_data, aes(x = NES, y = pathway, fill = type)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_manual(values = c("#9873B0", "#D5CC59")) +
+  theme_minimal() +
+  theme(axis.title.y = element_blank(),
+        axis.text = element_text(size = 16, colour = "black"),
+        axis.title.x = element_text(size = 16, colour = "black"),
+        legend.position = "right") +
+  xlab("normalized enrichment score")
+```
+
+
+Figure 6g: scatter plot of ETS expression score vs ETS-target expression score
+``` {r}
+# Score each spot based on expression of ETS target genes in ST interface (not filtered by cilia/non cilia)
+``` {r}
+EF.filt <- AddModuleScore(EF.filt,
+                          features = list(intersect(rownames(EF.filt), EF.interface.motif2.genes)),
+                          name = "ets_targets_interface")
+```
+
+
+Scatter plot of ETS score vs ETS target score?
+``` {r}
+ets.scatter.data <- EF.filt[[]] %>% dplyr::select(ets_targets_interface1, ets_1, tissue.subtype.plot)
+
+ets.scatter.interface <- ets.scatter.data %>% filter(tissue.subtype.plot == "interface (muscle-like)" | tissue.subtype.plot == "interface (tumor-like)")
+
+ggplot(ets.scatter.interface, aes(x = ets_1, y = ets_targets_interface1)) +
+  geom_point(size = 1.5) +
+  theme_classic() +
+  xlab("ETS gene\nexpression score") +
+  ylab("ETS-target gene\nexpression score") +
+  theme(axis.text = element_text(size = 16),
+        axis.title.x = element_text(size = 16, margin = margin(t = 10)),
+        axis.title.y = element_text(size = 16, margin = margin(r = 10))) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  coord_cartesian(xlim = c(-1.5, 1.5), ylim = c(-1,2)) +
+  scale_x_continuous(breaks = seq(-1.5, 1.5, 1.5))
+  
+```
+
+Calculate correlation:
+``` {r}
+cor(ets.scatter.interface[,1:2])
+cor.test(x = ets.scatter.interface$ets_1, y = ets.scatter.interface$ets_targets_interface1)
+```
+
+
+
+``` {r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
