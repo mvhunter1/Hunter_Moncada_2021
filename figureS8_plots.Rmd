@@ -1,0 +1,168 @@
+---
+title: "FigureS8_plots"
+author: "Miranda Hunter"
+date: "5/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plots from Figure S8 of Hunter, Moncada et al.
+
+Libraries:
+``` {r}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+Load data:
+``` {r}
+load('/Users/hunterm/Dropbox/10x/Tirosh_data/Tirosh_data.R')
+```
+
+Figure S8a: UMAP of cluster annotations (annotations from original paper)
+``` {r}
+nice_dim_plot(Tirosh_data, group_by = "cell_type")
+```
+
+
+Figure S8b: assign interface gene expression score from fish scRNA-seq dataset
+``` {r}
+Idents(EF.filt) <- "integrated_cell_type"
+SC_interface_genes <- FindMarkers(EF.filt,
+                                  ident.1 = "interface",
+                                  assay = "SCT") %>%
+  rownames_to_column(var = "gene") %>%
+  filter(p_val_adj <= 0.05) %>%
+  arrange(-avg_logFC)
+
+Tirosh_data <- AddModuleScore(Tirosh_data,
+                                   features = list(SC_interface_genes %>% filter(avg_logFC >= 1.5) %>% pull(gene) %>% convert_to_human_list()),
+                                   name = "SC_interface")
+
+nice_feature_plot(Tirosh_data, features = "SC_interface1", pt.size = 0.5, cutoffs = c(-1,1))
+```
+
+
+Figure S8c: classify "interface" cells as anything with an interface score above 0.5
+``` {r}
+interface_cells <- Tirosh_data[[]] %>% rownames_to_column(var = "cell") %>% filter(SC_interface1 > 0.5) %>% dplyr::select(cell) %>% mutate(cell_type = "interface") %>% deframe()
+other_cells <- Tirosh_data[[]] %>% rownames_to_column(var = "cell") %>% .[!.$cell %in% names(interface_cells),] %>% dplyr::select(cell, cell_type) %>% deframe()
+
+Tirosh_data <- AddMetaData(Tirosh_data,
+                                metadata = c(interface_cells, other_cells),
+                                col.name = "interface_cell")
+
+nice_dim_plot(Tirosh_data, group_by = "interface_cell", label = F, pt_size = 0.5)
+```
+
+
+Figure S8d-e: separate interface into the different cell states and plot cilia and ETS expression
+``` {r}
+Tirosh_metadata <- Tirosh_data[[]] %>% rownames_to_column(var = "cell")
+interface_metadata <- Tirosh_metadata %>% filter(interface_cell == "interface")
+for (ii in 1:nrow(interface_metadata)) {
+  cell_type <- interface_metadata$cell_type[ii] %>% as.character()
+  if (cell_type == "tumor") {
+    interface_metadata$interface_cell_type[ii] <- "interface (tumor-like)"
+  } else if (cell_type == "CAF") {
+    interface_metadata$interface_cell_type[ii] <- "interface (CAF-like)"
+  } else {
+    interface_metadata$interface_cell_type[ii] <- "interface (immune-like)"
+  }
+}
+interface_metadata <- interface_metadata %>% dplyr::select(cell, interface_cell_type)
+other_metadata <- Tirosh_metadata %>% .[!.$cell %in% interface_metadata$cell,] %>% dplyr::select(cell, cell_type)
+colnames(other_metadata)[2] <- "interface_cell_type"
+metadata_add <- rbind(interface_metadata, other_metadata)
+
+Tirosh_data <- AddMetaData(Tirosh_data, 
+                           metadata = deframe(metadata_add),
+                           col.name = "interface_cell_type")
+
+# Assign cilia and ETS expression scores
+# Add cilia expression score based on SYSCILIA list
+cilia.all <- readxl::read_excel("/Users/hunterm/Dropbox/MH_ST/Miranda_R/cilia/cilia_gene_list_full.xlsx") %>% pull("Gene Name") %>% unique()
+Tirosh_data <- AddModuleScore(Tirosh_data,
+                              features = list(intersect(cilia.all, rownames(Tirosh_data))),
+                              name = "cilia_all")
+
+# ETS score
+ets.human <- c("ETS1", "ETS2", "ETV6", "ETV7", "ELF3", "EHF", "ELF5", "SPDEF", "GABPA", "KCNH6", "FEV", "ELK1", "EPHB1", "ELF1", "ELF2", "ELF4", "ETV4", "ETV5", "ETV1", "ERF", "ETV3", "SPI1", "SPIB", "SPIC", "ETV2") 
+
+Tirosh_data  <- AddModuleScore(Tirosh_data ,
+                                   features = list(intersect(ets.human, rownames(tirosh_malignant))),
+                                   name = "ets_all")
+
+# Plot
+Idents(Tirosh_data) <- "interface_cell_type"
+levels(Tirosh_data) <- c("interface (tumor-like)", "interface (CAF-like)", "interface (immune-like)", "tumor", "CAF", "endothelial", "NK cell", "B cell", "T cell", "macrophage")
+
+
+p1 <- VlnPlot(Tirosh_data, 
+              features = "cilia_all1", 
+              sort = F, 
+              pt.size = 0.4) + 
+  NoLegend() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme(axis.title.x = element_blank(), 
+        axis.text.x = element_text(size = 14, angle = -40, hjust = 0)) +
+  scale_fill_manual(values = tol(10)) + 
+  ylab("SYSCILIA gene\nexpression score") +
+  coord_cartesian(ylim = c(-0.1, 0.1))
+
+p2 <- VlnPlot(Tirosh_data, 
+              features = "ets_all1", 
+              sort = F, 
+              pt.size = 0.4) + 
+  NoLegend() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  theme(axis.title.x = element_blank(), 
+        axis.text.x = element_text(size = 14, angle = -40, hjust = 0)) +
+  scale_fill_manual(values = tol(10)) + 
+  ylab("ETS gene\nexpression score") +
+  coord_cartesian(ylim = c(-0.25, 0.4))
+
+plot_grid(p1,p2, align = "hv", axis = "lrbt", nrow = 1)
+```
+
+
+``` {r}
+sessionInfo()
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
