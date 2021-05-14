@@ -1,0 +1,62 @@
+---
+title: "FigureS2_plots"
+author: "Miranda Hunter"
+date: "5/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Plots from Figure S2 of Hunter, Moncada et al.
+
+Libraries:
+``` {r, message = F, warning = F}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+Load data:
+``` {r}
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/ABC_integrated_allgenes_new.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/A1_norm.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/B1_norm.R")
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/C1_norm.R")
+```
+
+Add tissue type annotations from ABC sample back onto original Seurat objects and plot.
+``` {r}
+ABC_metadata <- ABC[[]] %>% rownames_to_column(var = "cell")
+A1 <- AddMetaData(A1,
+                  metadata = ABC_metadata %>% filter(orig.ident == "A1") %>% dplyr::select(cell, tissue.type) %>% deframe(),
+                  col.name = "ABC.tissue.type")
+A1_plot <- nice_dim_plot(A1, group_by = "ABC.tissue.type", label = F)
+
+B1 <- AddMetaData(B1,
+                  metadata = ABC_metadata %>% filter(orig.ident == "B1") %>% dplyr::select(cell, tissue.type) %>% deframe(),
+                  col.name = "ABC.tissue.type")
+B1_plot <- nice_dim_plot(B1, group_by = "ABC.tissue.type", label = F)
+
+C1 <- AddMetaData(C1,
+                  metadata = ABC_metadata %>% filter(orig.ident == "C1") %>% dplyr::select(cell, tissue.type) %>% deframe(),
+                  col.name = "ABC.tissue.type")
+C1_plot <- nice_dim_plot(C1, group_by = "ABC.tissue.type", label = F)
+plot_grid(B1_plot, C1_plot, A1_plot, nrow = 1, align = "hv", axis = "lrbt")
+
+nice_spatial_dim_plot(ABC, group.by = "tissue.type")
+```
+
+``` {r}
+sessionInfo()
+```
+
+
