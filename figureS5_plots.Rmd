@@ -1,0 +1,122 @@
+---
+title: "FigureS5_plots"
+author: "Miranda Hunter"
+date: "5/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Plots from Figure S5 of Hunter, Moncada et al.
+
+Libraries:
+``` {r, message = F, warning = F}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhspatialplots)
+```
+
+Load data:
+``` {r}
+load('/Users/hunterm/Dropbox/10x/R_objects/EF_integrated_allgenes_new.R')
+```
+
+Figure S5a and S5d: histograms of UMIs and genes per cell
+``` {r}
+EF_metadata <- EF.filt[[]]
+
+E1_metadata <- EF_metadata %>% filter(orig.ident == 'E1')
+F1_metadata <- EF_metadata %>% filter(orig.ident == 'F1')
+
+p1 <- ggplot(E1_metadata, aes(x = nCount_RNA)) +
+  geom_histogram(binwidth = 2000, fill = "#CE0046") +
+  theme_minimal() +
+  coord_cartesian(ylim = c(0,150), xlim = c(0,100000)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("UMIs per cell") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  ggtitle("UMIs (E1)")
+
+p2 <- ggplot(E1_metadata, aes(x = nFeature_RNA)) +
+  geom_histogram(binwidth = 250, fill = "#CE0046") +
+  theme_minimal() +
+  coord_cartesian(xlim = c(0,10000), ylim = c(0,200)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("genes per cell") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  ggtitle("genes (E1)")
+
+p3 <- ggplot(F1_metadata, aes(x = nCount_RNA)) +
+  geom_histogram(binwidth = 2000, fill = "#E8A62F") +
+  theme_minimal() +
+  coord_cartesian(xlim = c(0,250000), ylim = c(0,250)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("UMIs per cell") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  ggtitle("UMIs (F1)")
+
+
+# genes
+p4 <- ggplot(F1_metadata, aes(x = nFeature_RNA)) +
+  geom_histogram(binwidth = 250, fill = "#E8A62F") +
+  theme_minimal() +
+  coord_cartesian(xlim = c(0,10000), ylim = c(0,200)) +
+  # geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) +
+  xlab("genes per cell") +
+  ylab("frequency") +
+  theme(axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14)) +
+  ggtitle("genes (F1)")
+
+plot_grid(p1,p2,p3,p4, ncol = 2, align = "hv", axis = "lrbt")
+```
+
+
+Figure S5b and S5e: UMIs and genes per cell across clusters
+``` {r}
+Idents(EF.filt) <- "orig.ident"
+
+p1 <- nice_violin_plot(subset(EF.filt, idents = "E1"), group_by = "integrated_cell_type", features = "nCount_RNA", sort = F) 
+p2 <- nice_violin_plot(subset(EF.filt, idents = "E1"), group_by = "integrated_cell_type", features = "nFeature_RNA", sort = F) + coord_cartesian(ylim = c(0,10000))
+p3 <- nice_violin_plot(subset(EF.filt, idents = "F1"), group_by = "integrated_cell_type", features = "nCount_RNA", sort = F) + coord_cartesian(ylim = c(0,250000))
+p4 <- nice_violin_plot(subset(EF.filt, idents = "F1"), group_by = "integrated_cell_type", features = "nFeature_RNA", sort = F) + coord_cartesian(ylim = c(0,10000))
+plot_grid(p1,p2,p3,p4, nrow = 2, align = "hv", axis = "lrbt")
+```
+
+
+Figure S5c and S5f: UMAPs for each scRNA-seq reaction
+``` {r}
+Idents(EF.filt) <- "orig.ident"
+nice_dim_plot(subset(EF.filt, idents = "E1"), group_by = "integrated_cell_subtype", label = F)
+nice_dim_plot(subset(EF.filt, idents = "F1"), group_by = "integrated_cell_subtype", label = F)
+```
+
+
+Figure S5g: dropletFinder results
+``` {r}
+p1 <- nice_dim_plot(EF.filt, group_by = "integrated_cell_type", label = F)
+p2 <- nice_dim_plot(EF.filt, group_by = "DF.classifications_0.25_0.09_147", label = F)
+plot_grid(p1,p2, align = "hv", axis = "lrbt", nrow = 1)
+```
+
+``` {r}
+sessionInfo()
+```
