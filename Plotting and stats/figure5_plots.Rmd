@@ -245,8 +245,8 @@ SC_cilia <- GetAssayData(EF.filt, assay = "SCT", slot = "data") %>%
 # Add expression score for the top 25 genes to the snRNA-seq dataset
 NS_new <- AddModuleScore(NS_new, features = list(SC_cilia$gene[1:25]), name = "SC_cilia_top25_")
 
-Idents(NS_new) <- "cell_subtype_plot"
-levels(NS_new) <- c("interface (muscle_like)", "interface (tumor-like)", "interface (immune-like)", "interface (liver-like)", "interface (intestinal-like)", "tumor", "muscle", "other")
+Idents(NS_new) <- "cell_subtype_plot_new"
+levels(NS_new) <- c("interface (muscle_like)", "interface (tumor-like)", "interface (other)", "tumor", "muscle", "other")
 
 VlnPlot(NS_new, 
         features = "SC_cilia_top25_1", 
@@ -267,11 +267,22 @@ VlnPlot(NS_new,
 Run pairwise Wilcoxon test on cilia expression scores: 
 ``` {r}
 NS_metadata <- NS_new[[]] 
-pairwise.wilcox.test(NS_metadata$SC_cilia_top25_1, NS_metadata$cell_subtype_plot, p.adjust.method = "bonferroni")
+pairwise.wilcox.test(NS_metadata$SC_cilia_top25_1, NS_metadata$cell_subtype_plot_new, p.adjust.method = "bonferroni")
 ```
 
 
+Figure 5f: plot expression of individual cilia genes in snRNA-seq
+``` {r}
+Idents(NS_new) <- "cell_subtype_plot_new"
+levels(NS_new) <- c("interface (muscle_like)", "interface (tumor-like)", "interface (other)", "tumor", "muscle", "other")
+VlnPlot(NS_new,
+        features = c("ran", "tubb4b", "tuba4l", "gmnn"),
+        #group.by = "cell_subtype_plot_new",
+        ncol = 2,
+        pt.size = 0)
+```
 
 
-
-
+``` {r}
+sessionInfo()
+```

@@ -126,9 +126,71 @@ ggplot(expr_both, aes(x = mean_SC, y = mean_NS)) +
   theme_minimal() +
   theme(axis.title = element_text(size = 18),
         axis.text = element_text(size = 16)) +
-  coord_cartesian(xlim = c(0,5), ylim = c(0,5)) 
+  coord_cartesian(xlim = c(0,6), ylim = c(0,6)) 
 ```
 
+
+Figure S6d: compare mean gene expression of cilia genes across scRNA-seq and snRNA-seq datasets
+Determine mean expression of cilia genes:
+``` {r}
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/cilia/SYSCILIA_all_fish.R") # Load list of SYSCILIA fish genes
+
+expr_NS <- GetAssayData(NS_new, slot = "data", assay = "SCT") %>% 
+  .[rownames(.) %in% cilia_fish,] %>% 
+  data.frame() %>% 
+  rownames_to_column(var = "gene") %>% 
+  mutate(mean_NS = rowMeans(.[,2:ncol(.)])) %>% 
+  dplyr::select(gene, mean_NS)
+
+expr_EF <- GetAssayData(EF.filt, slot = "data", assay = "SCT") %>% 
+  .[rownames(.) %in% cilia_fish,] %>% 
+  data.frame() %>% 
+  rownames_to_column(var = "gene") %>% 
+  mutate(mean_SC = rowMeans(.[,2:ncol(.)])) %>% 
+  dplyr::select(gene, mean_SC)
+
+expr_both <- merge(x = expr_EF,
+                   y = expr_NS,
+                   by = "gene")
+```
+
+Linear regression:
+``` {r}
+lm_res <- lm(mean_SC ~ mean_NS, expr_both)
+summary.lm(lm_res)
+rsq <- summary(lm_res)$r.squared %>% round(digits = 4)
+```
+
+Find outliers to be labelled on plot:
+``` {r}
+expr_both$residuals <- residuals(lm_res)
+ggplot(expr_both, aes(residuals)) + geom_histogram() # look at histogram to set residual threshold
+```
+
+Set outlier cutoff of 0.5 and -0.5:
+``` {r}
+outliers <- expr_both[expr_both$residuals >= 0.5 | expr_both$residuals <= -0.5, ]$gene
+```
+
+Scatter plot:
+``` {r}
+require(ggrepel)
+p2 <- ggplot(expr_both, aes(x = mean_SC, y = mean_NS)) +
+  geom_point(size = 0.75) +
+  #geom_smooth(method = "lm", color = "#B8122690", size = 2) +
+  geom_text_repel(data = (expr_both[expr_both$gene %in% outliers,]),
+                  aes(x = mean_SC, y = mean_NS, label = gene, size = 14),
+                  segment.alpha = 0.5,
+                  show.legend = F,
+                  point.padding = 0.25,
+                  min.segment.length = 0.05) +
+  xlab("mean expression in scRNA-seq") +
+  ylab("mean expression in snRNA-seq") +
+  theme_minimal() +
+  theme(axis.title = element_text(size = 18),
+        axis.text = element_text(size = 16)) +
+  coord_cartesian(ylim = c(0,3.5), xlim = c(0,3.5))
+```
 
 ``` {r}
 sessionInfo()
