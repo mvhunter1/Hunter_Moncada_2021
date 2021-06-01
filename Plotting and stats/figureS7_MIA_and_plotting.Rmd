@@ -1,0 +1,152 @@
+---
+title: "Getting SC and ST markers"
+author: "Reuben Moncada"
+date: "3/8/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+#setwd('~/Desktop/Revision analyses/')
+# Load libraries and data
+
+library(Seurat)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(scales)
+
+# Single nucleus data
+#load('data/EF_integrated_allgenes_new.R')
+load('/Users/hunterm/Dropbox/10x/nuc_seq/NS_norm_new_hashing_nodoublets.R')
+
+SC <- NS_new
+rm(NS_new)
+
+# ST data
+load('/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/ABC_integrated_allgenes_new.R')
+ST <- ABC
+rm('ABC')
+
+# Load metadata of the refined cluster annotations
+ABC.meta <- read.csv('/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/ABC_metadata_updated.csv')
+ABC.meta$barcodes <- sapply(ABC.meta$barcodes, sub, pattern = '.1', replacement = '-1')
+rownames(ABC.meta) <- ABC.meta$barcodes
+
+Idents(ST) <- ABC.meta$tissue.type # Rename tissue types
+ST$tissue.type <- ABC.meta$tissue.type
+
+
+Idents(ST) <- ST$tissue.type
+
+
+```
+
+```{r}
+# SC markers
+Idents(SC) <- 'cell_subtype'
+sc.markers <- FindAllMarkers(SC,assay = 'RNA',  only.pos = TRUE, test.use = 'wilcox', min.pct = 0.25, logfc.threshold = 0.5, verbose = F)
+sc.markers['cluster'] %>% summary(maxsum=50) 
+
+
+# ST markers
+st.markers <- FindAllMarkers(ST, assay = 'Spatial', only.pos = TRUE, test.use = 'wilcox', min.pct = 0.25, logfc.threshold = 0.5, verbose = F)
+
+st.markers['cluster'] %>% summary()
+
+```
+
+```{r}
+
+### MIA ###
+
+# Create a list object containing the marker genes for each ST region:
+st.clusts <- Idents(ST) %>% levels()
+N <- length(st.clusts)
+
+st.marker.list <- vector(mode = 'list', length = N)
+names(st.marker.list) <- st.clusts
+for(i in st.clusts) {
+    st.marker.list[[i]] <- st.markers[st.markers$cluster == i,'gene']
+}
+
+# Create a list object containing the marker genes for each cell type:
+sc.clusts <- Idents(SC) %>% levels()
+M <- length(sc.clusts)
+
+sc.marker.list <- vector(mode = 'list', length = M)
+names(sc.marker.list) <- sc.clusts
+
+for (i in sc.clusts) {
+  sc.marker.list[[i]] <- sc.markers[sc.markers$cluster == i,'gene']
+}
+
+# Initialize a dataframe for us to store values in:
+N <- length(st.clusts) ; M <- length(sc.clusts)
+MIA.results <- matrix(0,nrow = M, ncol = N)
+row.names(MIA.results) <- sc.clusts
+colnames(MIA.results) <- st.clusts
+
+# Gene universe
+gene.universe <- intersect(ST@assays$Spatial %>% rownames(), SC@assays$RNA %>% rownames()) %>% length()
+
+  # Loop over ST clusters
+for (i in 1:N) {
+  # Then loop over SC clusters
+  for (j in 1:M) {
+    genes1 <- st.marker.list[[st.clusts[i]]]
+    genes2 <- sc.marker.list[[sc.clusts[j]]]
+    
+    # Hypergeometric    
+    A <- length(intersect(genes1,genes2))
+    B <- length(genes1)
+    C <- length(genes2)
+    enr <- -log10(phyper(A, B, gene.universe-B, C, lower.tail = FALSE))
+    dep <- -log10(1-phyper(A, B, gene.universe-B, C, lower.tail = FALSE))
+    if (enr < dep) {
+      MIA.results[j,i] = -dep
+    } else {
+      MIA.results[j,i] = enr
+    MIA.results[is.infinite(MIA.results)] <- 0
+    }
+  }
+}
+
+
+# Visualize as heatmap
+heatmap_df <- data.frame('Cell types' = melt(MIA.results)[,1],
+                         'Tissue regions' = melt(MIA.results)[,2],
+                         enrichment = melt(MIA.results)[,3])
+
+ggplot(data = heatmap_df, aes(x = Tissue.regions, y = Cell.types, fill = enrichment)) +
+  geom_tile() + 
+  scale_fill_gradient2(low = "navyblue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-20,20), space = "Lab", 
+                       oob=squish, name="Enrichment \n -log10(p)") +
+  ylim(heatmap_df$Cell.types %>% levels() %>% sort() %>% rev()) + 
+  theme_minimal()
+
+ggplot(data = heatmap_df, aes(x = Tissue.regions, y = Cell.types, fill = enrichment)) +
+  geom_tile() + 
+  scale_fill_gradient(low = "red", high = "white", 
+                       limit = c(-20,20), space = "Lab", 
+                       oob=squish, name="Enrichment \n -log10(p)") +
+  ylim(heatmap_df$Cell.types %>% levels() %>% sort() %>% rev()) + 
+  theme_minimal()
+```
+
+
+```{r}
+'Visualize just interface ST enrichment'
+
+interface_heatmap_df <- heatmap_df[heatmap_df$Tissue.regions == 'interface',]
+ggplot(data = interface_heatmap_df, aes(x = Tissue.regions, y = Cell.types, fill = enrichment)) +
+  geom_tile() + 
+  scale_fill_gradient2(low = "navyblue", high = "red", mid = "white", 
+                       midpoint = 0, limit = c(-20,20), space = "Lab", 
+                       oob=squish, name="Enrichment \n -log10(p)") +
+  ylim(heatmap_df$Cell.types %>% levels() %>% sort() %>% rev()) + 
+  theme_minimal()
+
+```
+
