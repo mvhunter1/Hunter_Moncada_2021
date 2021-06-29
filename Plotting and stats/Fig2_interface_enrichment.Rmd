@@ -1,0 +1,135 @@
+---
+title: "Fig2 calculation of interface enriched genes"
+author: "Miranda Hunter"
+date: "6/29/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries:
+``` {r, message = F, warning = F}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhfunctions)
+```
+
+
+Load SRT dataset.
+``` {r}
+load("/Users/hunterm/Dropbox/MH_ST/Miranda_R/visium_Seurat_objs_fish/ABC_integrated_allgenes_new.R")
+Idents(ABC) <- "cell_type"
+```
+
+
+1. Calculate avg log2FC of each gene in the dataset within the interface region, relative to the tumor and muscle clusters.
+``` {r}
+interface_markers <- FindMarkers(ABC,
+                                 ident.1 = "interface",
+                                 #ident.2 = c("tumor", "muscle"),
+                                 logfc.threshold = 0,
+                                 assay = "SCT") %>%
+  rownames_to_column(var = "gene") %>%
+  arrange(-avg_log2FC) 
+
+```
+
+
+2. Calculate avg log2FC of each of the genes above within the tumor and muscle clusters.
+Tumor:
+``` {r}
+interface_markers_tumor <- FindMarkers(ABC,
+                                       ident.1 = "tumor",
+                                       features = interface_markers$gene,
+                                       assay = "SCT",
+                                       logfc.threshold = 0) %>% 
+  rownames_to_column(var = "gene") %>%
+  arrange(-avg_log2FC)
+```
+
+Muscle:
+``` {r}
+interface_markers_muscle <- FindMarkers(ABC,
+                                        ident.1 = "muscle",
+                                        features = interface_markers$gene,
+                                        assay = "SCT",
+                                        logfc.threshold = 0) %>% 
+  rownames_to_column(var = "gene") %>%
+  arrange(-avg_log2FC)
+```
+
+
+3. Determine which genes have a higher log2FC within the interface than in the tumor or muscle.
+``` {r}
+interface_markers <- interface_markers %>% dplyr::select(gene, avg_log2FC, p_val_adj)
+interface_markers_tumor <- interface_markers_tumor %>% dplyr::select(gene, avg_log2FC)
+interface_markers_muscle <- interface_markers_muscle %>% dplyr::select(gene, avg_log2FC)
+
+colnames(interface_markers)[2] <- "log2FC_in_interface"
+colnames(interface_markers_tumor)[2] <- "log2FC_in_tumor"
+colnames(interface_markers_muscle)[2] <- "log2FC_in_muscle"
+
+all_expression_data <- merge(x = interface_markers,
+                             y = interface_markers_tumor,
+                             by = "gene") %>%
+  merge(x = .,
+        y = interface_markers_muscle,
+        by = "gene")
+
+
+all_expression_data_filt <- all_expression_data %>% filter(p_val_adj <= 0.05)
+```
+
+Determine upregulated genes as genes with an interface log2FC > 0, and genes with a higher interface log2FC than tumor AND muscle log2FCs.
+``` {r}
+interface_genes_up <- all_expression_data_filt %>% filter(log2FC_in_interface > 0 & log2FC_in_interface > log2FC_in_muscle & log2FC_in_interface > log2FC_in_tumor)
+interface_genes_down <- all_expression_data_filt %>% filter(log2FC_in_interface < 0 & log2FC_in_interface < log2FC_in_muscle & log2FC_in_interface < log2FC_in_tumor)
+```
+
+
+4. Plot volcano plot of log2FC and adjusted p vals in interface, and label the interface marker genes calculated in step 3.
+``` {r}
+
+interface_genes_up_or_down <- c(interface_genes_up$gene, interface_genes_down$gene)
+
+all_expression_data_plot <- rbind(all_expression_data[all_expression_data$gene %in% interface_genes_up$gene,] %>% mutate(interface = "up"),
+                                  all_expression_data[all_expression_data$gene %in% interface_genes_down$gene,] %>% mutate(interface = "down"),
+                                  all_expression_data[!all_expression_data$gene %in% interface_genes_up_or_down,] %>% mutate(interface = NA))
+
+ggplot(all_expression_data_plot, aes(x = log2FC_in_interface, y = -log10(p_val_adj), color = interface)) +
+  geom_point() +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed") +
+  geom_vline(xintercept = 0) +
+  geom_hline(yintercept = 0) + 
+  #coord_cartesian(xlim = c(-2,1)) +
+  theme_minimal() +
+  xlab("average log2 fold change in interface") +
+  ylab("-log10 p-value") +
+  theme(axis.title = element_text(size = 16, color = "black"),
+        axis.text = element_text(size = 16, color = "black")) +
+  geom_text_repel(data = subset(all_expression_data_plot, gene %in% interface_genes_up_or_down), aes(label = gene), colour = "black",
+                  min.segment.length = 0.05)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
