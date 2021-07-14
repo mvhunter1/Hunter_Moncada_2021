@@ -1,0 +1,378 @@
+---
+title: "smalley_analyses"
+author: "Miranda Hunter"
+date: "7/13/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Libraries:
+``` {r, message = F, warning = F}
+library(Seurat)
+library(tidyverse)
+library(scales)
+library(pals)
+library(cowplot)
+library(fgsea)
+library(msigdbr)
+library(data.table)
+library(mvhfunctions)
+```
+
+
+Read in counts matrix from GEO: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE174401
+``` {r}
+smalley_counts <- Read10X_h5('/Users/hunterm/Dropbox/10x/Smalley_data/GSE174401_filtered_feature_bc_matrix.h5')
+```
+
+Make Seurat object:
+``` {r}
+smalley <- CreateSeuratObject(counts = smalley_counts,
+                              project = "smalley",
+                              min.cells = 3,
+                              min.features = 200)
+smalley
+setwd('/Users/hunterm/Dropbox/10x/Smalley_data/')
+save(smalley, file = "smalley_Seurat.R")
+rm(smalley_counts)
+```
+
+
+QC metrics:
+``` {r}
+# add % mt genes to metadata
+smalley[["percent.mt"]] <- PercentageFeatureSet(smalley, pattern = "^MT")
+
+# plot some QC metrics
+VlnPlot(smalley, features = c("nCount_RNA", "nFeature_RNA", "percent.mt"))
+```
+
+Filter cells with more than 20% MT reads as they did in the paper.
+``` {r}
+smalley <- subset(smalley, subset = percent.mt < 20)
+smalley
+```
+
+Various processing steps:
+``` {r, message = F, warning = F}
+smalley <- SCTransform(smalley, verbose = F, vars.to.regress = "percent.mt")
+smalley <- FindVariableFeatures(object = smalley, selection.method = "vst", verbose = F)
+smalley <- ScaleData(object = smalley, features = rownames(smalley), verbose = F)
+smalley <- RunPCA(object = smalley, features = VariableFeatures(smalley), verbose = F)
+print(smalley[["pca"]], dims = 1:5, nfeatures = 10)
+```
+
+Select PCs for UMAP/clustering:
+``` {r}
+ElbowPlot(smalley)
+```
+
+
+
+## UMAP and clustering
+``` {r}
+smalley <- RunUMAP(smalley, dims = 1:15, verbose = F)
+smalley <- FindNeighbors(smalley, dims = 1:15, verbose = F)
+smalley <- FindClusters(smalley, verbose = T)
+nice_dim_plot(smalley, group_by = "SCT_snn_res.0.8")
+
+```
+
+Look at some tumor genes:
+``` {r}
+tumor_genes <- c("MLANA", "PMEL", "DCT")
+nice_feature_plot(smalley, features = tumor_genes, order = T, pt.size = 0.5)
+```
+
+
+
+Try to find "interface" cluster.
+``` {r}
+#load("/Users/hunterm/Dropbox/10x/R_objects/EF_integrated_allgenes_new.R")
+
+Idents(EF.filt) <- "integrated_cell_type"
+SC_interface_genes <- FindMarkers(EF.filt,
+                                  ident.1 = "interface",
+                                  assay = "SCT") %>%
+  rownames_to_column(var = "gene") %>%
+  filter(p_val_adj <= 0.05) %>%
+  arrange(-avg_log2FC)
+
+smalley <- AddModuleScore(smalley,
+                              features = list(SC_interface_genes %>% filter(avg_log2FC >= 1.5) %>% pull(gene) %>% convert_to_human_list()),
+                              name = "SC_interface")
+
+smalley <- CellCycleScoring(smalley,
+                                s.features = cc.genes$s.genes,
+                                g2m.features = cc.genes$g2m.genes,
+                                set.ident = T)
+
+p1 <- nice_feature_plot(smalley, features = "SC_interface1", diverging_cmap = T, order = T)
+p2 <- nice_dim_plot(smalley, group_by = "Phase", label = F)
+plot_grid(p1,p2)
+```
+
+
+
+Score cells for tumor genes, ETS genes and cilia genes.
+``` {r}
+tumor_genes <- c("MLANA", "PMEL", "DCT", "MITF")
+cilia_genes <- readxl::read_excel("/Users/hunterm/Dropbox/MH_ST/Miranda_R/cilia/cilia_gene_list_full.xlsx") %>% pull("Gene Name") %>% unique()
+ets_genes <- c("ETS1", "ETS2", "ETV6", "ETV7", "ELF3", "EHF", "ELF5", "SPDEF", "GABPA", "KCNH6", "FEV", "ELK1", "EPHB1", "ELF1", "ELF2", "ELF4", "ETV4", "ETV5", "ETV1", "ERF", "ETV3", "SPI1", "SPIB", "SPIC", "ETV2") 
+
+gene_lists <- list(tumor = tumor_genes,
+                   cilia = cilia_genes,
+                   ets = ets_genes)
+
+
+for (ii in 1:length(gene_lists)) {
+  marker_genes <- intersect(gene_lists[[ii]], rownames(smalley))
+  marker_name <- names(gene_lists[ii])
+  smalley <- AddModuleScore(smalley,
+                            features = list(marker_genes),
+                            name = marker_name)
+}
+
+nice_feature_plot(smalley, features = "tumor1", order = T)
+nice_feature_plot(smalley, features = "cilia1", order = T)
+nice_feature_plot(smalley, features = "ets1", order = T)
+nice_feature_plot(smalley, features = "SC_interface1", order = T)
+
+```
+
+Add patient information (seems to be stored in the cell barcode):
+``` {r}
+patient_info <- smalley[[]] %>% rownames_to_column(var = "cell") %>% dplyr::select(cell)
+
+patient_info$pt <- gsub(pattern = ".*-",
+                        x = patient_info$cell,
+                        replacement = "")
+
+smalley <- AddMetaData(smalley,
+                       metadata = deframe(patient_info),
+                       col.name = "patient")
+nice_dim_plot(smalley, group_by = "patient", label = F)
+```
+
+Add some cluster info.
+``` {r}
+smalley <- FindClusters(smalley, resolution = 0.4, verbose = F)
+smalley <- FindClusters(smalley, resolution = 0.3, verbose = F)
+nice_dim_plot(smalley, group_by = "SCT_snn_res.0.8")
+nice_dim_plot(smalley, group_by = "SCT_snn_res.0.4")
+nice_dim_plot(smalley, group_by = "SCT_snn_res.0.3")
+nice_feature_plot(smalley, features = "tumor1", order = T)
+nice_feature_plot(smalley, features = "cilia1", order = T)
+nice_feature_plot(smalley, features = "ets1", order = T)
+nice_feature_plot(smalley, features = "SC_interface1", order = T)
+```
+
+
+Add cluster annotations:
+``` {r}
+smalley_metadata <- smalley[[]] %>% rownames_to_column(var = "cell") %>% dplyr::select(cell, SCT_snn_res.0.3)
+for (ii in 1:nrow(smalley_metadata)) {
+  cluster <- smalley_metadata[ii,2] %>% as.character() %>% as.numeric()
+  if (cluster == 11) {
+    smalley_metadata$cell_type[ii] <- "pDC"
+  } else if (cluster %in% c(6,14,8,2,9,5,7)) {
+    smalley_metadata$cell_type[ii] <- "tumor"
+  } else if (cluster %in% c(3,13)) {
+    smalley_metadata$cell_type[ii] <- "monocytes, macrophages, DCs"
+  } else if (cluster %in% c(0,1,4,16)) {
+    smalley_metadata$cell_type[ii] <- "T/NK cells"
+  } else if (cluster == 10) {
+    smalley_metadata$cell_type[ii] <- "B cells"
+  } else if (cluster == 15) {
+    smalley_metadata$cell_type[ii] <- "fibroblasts"
+  } else if (cluster == 12) {
+    smalley_metadata$cell_type[ii] <- "neurons"
+  } else if (cluster == 17) {
+    smalley_metadata$cell_type[ii] <- "unknown"
+  } 
+}
+
+smalley <- AddMetaData(smalley,
+                   metadata = smalley_metadata %>% dplyr::select(cell, cell_type) %>% deframe(),
+                   col.name = "cell_type")
+
+nice_dim_plot(smalley, group_by = "cell_type")
+```
+
+Separate out "interface" cells.
+
+Classify cells as "interface":
+``` {r}
+interface_cutoff <- 0.5
+
+interface_cells <- smalley[[]] %>% rownames_to_column(var = "cell") %>% filter(SC_interface1 > interface_cutoff) %>% dplyr::select(cell) %>% mutate(cell_type = "interface") %>% deframe()
+other_cells <- smalley[[]] %>% rownames_to_column(var = "cell") %>% .[!.$cell %in% names(interface_cells),] %>% dplyr::select(cell, cell_type) %>% deframe()
+
+# add new metadata column labelling interface
+smalley <- AddMetaData(smalley,
+                           metadata = c(interface_cells, other_cells),
+                           col.name = "interface_cell")
+
+smalley <- AddMetaData(smalley,
+                       metadata = interface_cells,
+                       col.name = "interface")
+
+nice_dim_plot(smalley, group_by = "interface_cell", label = F)
+nice_dim_plot(smalley, group_by = "interface", label = F)
+
+Idents(smalley) <- "interface_cell"
+nice_dim_plot(subset(smalley, idents = "interface"), group_by = "cell_type")
+```
+
+Break the interface into different cell types:
+``` {r}
+smalley_metadata <- smalley[[]] %>% rownames_to_column(var = "cell") %>% dplyr::select(cell, cell_type, interface_cell)
+interface_metadata <- smalley_metadata %>% filter(interface_cell == "interface") # 515 interface cells
+
+interface_metadata$interface_cell_type <- paste0("interface (", interface_metadata$cell_type, "-like)")
+
+new_metadata <- c(interface_metadata %>% dplyr::select(cell, interface_cell_type) %>% deframe(),
+                  smalley_metadata %>% filter(interface_cell != "interface") %>% dplyr::select(cell, cell_type) %>% deframe())
+
+smalley <- AddMetaData(smalley,
+                       metadata = new_metadata,
+                       col.name = "interface_cell_type")
+nice_dim_plot(smalley, group_by = "interface_cell_type")
+```
+
+
+Make plots for figure:
+``` {r}
+p1 <- DimPlot(smalley, group.by = "cell_type", cols = tol(8), pt.size = 0.75)
+p2 <- FeaturePlot(smalley, features = "SC_interface1", max.cutoff = 1, order = T, pt.size = 0.75) + scale_color_gradientn(colours = rev(magma(n = 100)))
+p3 <- DimPlot(smalley, group.by = "interface", pt.size = 0.75)
+plot_grid(p1,p2,p3, align = "hv", axis = "lrbt", ncol = 3)
+
+```
+
+Feature plots:
+``` {r}
+genes <- c("PLK1", "HMGB2", "TUBB4B", "TPX2")
+
+plots <- FeaturePlot(smalley,
+            features = genes,
+            #min.cutoff = -2,
+            #max.cutoff = 2,
+            pt.size = 0.2,
+            #slot = "scale.data",
+            order = F,
+            combine = F)
+plots <- lapply(plots, function(x) {
+  x + scale_color_gradientn(colors = viridis(n = 100))
+})
+
+plot_grid(plotlist = plots, nrow = 2, align = "hv", axis = "lrbt")
+
+plots <- FeaturePlot(smalley,
+            features = genes,
+            #min.cutoff = -2,
+            #max.cutoff = 2,
+            pt.size = 0.4,
+            #slot = "scale.data",
+            order = T,
+            combine = F)
+plots <- lapply(plots, function(x) {
+  x + scale_color_gradientn(colors = viridis(n = 100))
+})
+
+plot_grid(plotlist = plots, nrow = 2, align = "hv", axis = "lrbt")
+```
+
+Cilia expression:
+``` {r}
+
+# tumor
+plots1 <- VlnPlot(object = subset(smalley, idents = c("tumor", "interface (tumor-like)")),
+              features = "cilia1",
+              group.by = "interface_cell_type",
+              sort = F,
+              combine = F)
+plots1 <- lapply(plots1, function(x) {
+  x + theme(axis.title.x = element_blank(), axis.text.x = element_blank()) + NoLegend() + geom_hline(yintercept = 0, linetype = "dashed")
+})
+p1 <- plot_grid(plotlist = plots1)
+
+# T/NK
+plots2 <- VlnPlot(object = subset(smalley, idents = c("T/NK cells", "interface (T/NK cells-like)")),
+              features = "cilia1",
+              group.by = "interface_cell_type",
+              sort = F,
+              combine = F)
+plots2 <- lapply(plots2, function(x) {
+  x + theme(axis.title.x = element_blank(), axis.text.x = element_blank()) + NoLegend() + geom_hline(yintercept = 0, linetype = "dashed")
+})
+p2 <- plot_grid(plotlist = plots2)
+
+# myeloid
+plots3<- VlnPlot(object = subset(smalley, idents = c("monocytes, macrophages, DCs", "interface (monocytes, macrophages, DCs-like)")),
+              features = "cilia1",
+              group.by = "interface_cell_type",
+              sort = F,
+              combine = F)
+plots3 <- lapply(plots3, function(x) {
+  x + theme(axis.title.x = element_blank(), axis.text.x = element_blank()) + NoLegend() + geom_hline(yintercept = 0, linetype = "dashed")
+})
+p3 <- plot_grid(plotlist = plots3)
+
+plot_grid(p1,p2,p3, nrow = 3, align = "hv", axis = "lrbt")
+```
+
+
+
+Stats:
+tumor:
+``` {r}
+tumor_metadata <- smalley[[]] %>% filter(cell_type == "tumor") %>% dplyr::select("cilia1", "ets1", "interface_cell_type") 
+
+stats <- wilcox.test(tumor_metadata %>% filter(interface_cell_type == "tumor") %>% pull(cilia1),
+            tumor_metadata %>% filter(interface_cell_type == "interface (tumor-like)") %>% pull(cilia1))
+stats$p.value
+```
+
+
+T/NK:
+``` {r}
+metadata <- smalley[[]] %>% filter(cell_type == "T/NK cells") %>% dplyr::select("cilia1", "ets1", "interface_cell_type") 
+
+stats <- wilcox.test(metadata %>% filter(interface_cell_type == "T/NK cells") %>% pull(cilia1),
+            metadata %>% filter(interface_cell_type == "interface (T/NK cells-like)") %>% pull(cilia1))
+stats$p.value
+```
+
+
+Myeloid:
+``` {r}
+metadata <- smalley[[]] %>% filter(cell_type == "monocytes, macrophages, DCs") %>% dplyr::select("cilia1", "ets1", "interface_cell_type") 
+
+stats <- wilcox.test(metadata %>% filter(interface_cell_type == "monocytes, macrophages, DCs") %>% pull(cilia1),
+            metadata %>% filter(interface_cell_type == "interface (monocytes, macrophages, DCs-like)") %>% pull(cilia1))
+stats$p.value
+```
+
+
+Violin plot of interface scores:
+``` {r}
+#smalley_for_plotting <- subset(smalley, idents = c("interface (T/NK cells-like)", "interface (monocytes, macrophages, DCs-like)", "interface (tumor-like)", "neurons", "tumor", "pDC", "T/NK cells", "B cells", "unknown", "monocytes, macrophages, DCs", "fibroblasts"))
+
+Idents(smalley_for_plotting) <- "interface_cell_type"
+levels(smalley_for_plotting) <- c("interface (tumor-like)", "interface (T/NK cells-like)", "interface (monocytes, macrophages, DCs-like)", "tumor", "T/NK cells", "monocytes, macrophages, DCs", "neurons", "B cells", "pDC", "fibroblasts", "unknown")
+nice_violin_plot(smalley_for_plotting, features = "SC_interface1", pt.size = 0, sort = F)
+```
+
+stats:
+``` {r}
+smalley_metadata <- smalley[[]]
+
+stats <- pairwise.wilcox.test(smalley_metadata$SC_interface1, smalley_metadata$interface_cell_type, p.adjust.method = "bonferroni")
+stats$p.value
+```
+
+
